@@ -5,16 +5,16 @@ function CaveFly()
 
 %% Load Flyer Neural Network Parameters:
 global W b
-load('flyerParamsBest.mat', 'flyer')
+load('basicFlyerParams.mat', 'flyer')
 W = flyer.W;
 b = flyer.b;
 
-%evolveNN(43);
+evolveNN(10);
 
 %% Modifiable setup parameters
 SYS = [];
 SYS.tframe = 0.01;  % how fast to try to update frames (visual effect only, does not affect calculations)
-SYS.level = 10;  % choose a level (any integer)
+SYS.level = 2;  % choose a level (any integer)
 
 % Program steps
 SYS = GenerateLevel(SYS);  % generates level
@@ -81,8 +81,8 @@ function evolveNN(N)
     hold on
         elitePlot = plot(eliteTimes,plotGenerations, 'r');
         avgPlot = plot(avgTimes,plotGenerations, 'k');
-    hold off
-    title({'CaveFlyer Neural Network Parameter Evolution Progress', char("with Generation Size of "+N+".")}, 'Interpreter', 'latex');
+end
+    title('CaveFlyer Neural Network Parameter Evolution Progress', 'Interpreter', 'latex');
     xlabel('Generation', 'Interpreter', 'latex');
     ylabel('Time Survived [s]', 'Interpreter', 'latex');
     legend({'Best Member of Population', 'Average of Population'}, 'location', 'NorthWest', 'Interpreter', 'latex');
@@ -91,39 +91,35 @@ function evolveNN(N)
         % Test Each Flyer:
         i = 1;
         while(i <= N)
-            for j=1:2
-                % Setup Testing Environment
-                SYS = [];
-                SYS.tframe = 0.01;  % how fast to try to update frames (visual effect only, does not affect calculations)
-                SYS.level = 5*j;  % choose a level (any integer)
+            % Setup Testing Environment
+            SYS = [];
+            SYS.tframe = 0.01;  % how fast to try to update frames (visual effect only, does not affect calculations)
+            SYS.level = 10;  % choose a level (any integer)
+            
+            % Link External Network Params to the Flyer being Tested:
+            W = pop(i).W;
+            b = pop(i).b;
 
-                % Link External Network Params to the Flyer being Tested:
-                W = pop(i).W;
-                b = pop(i).b;
-
-                % Conduct Test:
-                SYS = GenerateLevel(SYS);  % generates level
-                SYS = CalculateShipPath(SYS);  % calculates ship path based on controller
-                pop(i).time = pop(i).time + SYS.Iimpact;  % returns initial impact
-            end
-            pop(i).time = pop(i).time / 2;
+            % Conduct Test:
+            SYS = GenerateLevel(SYS);  % generates level
+            SYS = CalculateShipPath(SYS);  % calculates ship path based on controller
+            pop(i).time = SYS.Iimpact;  % returns initial impact
             
             i = i+1;
         end
         
         % Sort Flyers by Performance:
-        [~, ind] = sort([pop.time], 'descend');
+        [~, ind] = sort([pop.time]);
         pop = pop(ind);
         
         % Plot Progress Every 10 Generations:
         if( ~mod(gen,1) )
             eliteTimes(end+1) = pop(1).time;
             avgTimes(end+1) = mean([pop.time]);
-            plotGenerations(end+1) = gen;
+            plotGenerations(end+1) = N;
             
             set(elitePlot, 'XData',plotGenerations, 'YData',eliteTimes);
             set(avgPlot, 'XData',plotGenerations, 'YData',avgTimes);
-            drawnow;
         end
         
         % Save Params if Time has Improved by More than 100sec or Another 10 Generations have Passed:
@@ -154,8 +150,8 @@ function evolveNN(N)
         end
         
         % Mutants:
-        for i=1:nMutants
-            nextGen(N-nMutants+i) = mutate(pop(2*nCrossSets+i), 1); % Mutate most successful flyers that weren't successful enough to breed.
+        for i=(N-nMutants+1):N
+            nextGen(i) = mutate(pop(i), 1);
         end
         
         pop = nextGen;
@@ -171,7 +167,7 @@ function evolveNN(N)
     function child = crossover(parent1, parent2, ratio)
         for ii = 1:3
             ww{:,:,ii} = parent1.W{:,:,ii} * ratio + parent2.W{:,:,ii} * (1-ratio);
-            bb{:,ii} = parent1.b{:,ii} * ratio + parent2.b{:,ii} * (1-ratio);
+            bb{:,:,ii} = parent1.b{:,:,ii} * ratio + parent2.b{:,:,ii} * (1-ratio);
         end
         child = Flyer(ww,bb);
     end
@@ -185,20 +181,20 @@ function evolveNN(N)
         
         function out = swap(in)
             rangeStart = randi(size(in,1), 1);
-            rangeLen = randi(size(in,1)-rangeStart+1, 1);
+            rangeLen = randi(size(in,1)-ri+1, 1);
             out = in;
             out(rangeStart,:) = in(rangeStart+rangeLen-1,:);
             out(rangeStart+rangeLen-1,:) = in(rangeStart,:);
         end
         function out = rev(in)
             rangeStart = randi(size(in,1), 1);
-            rangeLen = randi(size(in,1)-rangeStart+1, 1);
+            rangeLen = randi(size(in,1)-ri+1, 1);
             out = in;
             out(rangeStart:rangeStart+rangeLen-1,:) = flip(out(rangeStart:rangeStart+rangeLen-1,:),1);
         end
         function out = mix(in)
             rangeStart = randi(size(in,1), 1);
-            rangeLen = randi(size(in,1)-rangeStart+1, 1);
+            rangeLen = randi(size(in,1)-ri+1, 1);
             out = in;
             tmp = out(rangeStart:rangeStart+rangeLen-1,:);
             out(rangeStart:rangeStart+rangeLen-1,:) = reshape(tmp(randperm(numel(tmp))), size(tmp));
@@ -207,17 +203,17 @@ function evolveNN(N)
             % Replace all values within random range of values with values
             % randomly chosen from normal distribution of acceptable
             % weights.
-            ub = 75; % (5-sigma) Upper bound on weights
+            ub = 100; % (5-sigma) Upper bound on weights
             mu = 1; % Mean Value for distribution of possible weights
             sigma = (ub-mu) / 5; % Std.Dev of distribution of possible weights
             out = in;
             rangeStart = randi(numel(out), 1);
-            rangeLen = randi(numel(out)-rangeStart+1, 1);
+            rangeLen = randi(numel(out)-ri+1, 1);
             out(rangeStart:rangeStart+rangeLen-1) = normrnd(mu,sigma, 1,rangeLen);
         end
         for ii = 1:3
             ww{:,:,ii} = parent.W{:,:,ii};
-            bb{:,ii} = parent.b{:,ii};
+            bb{:,:,ii} = parent.b{:,:,ii};
             if rand() < Pswap/size(parent.W,3)
                 ww{ii} = swap(ww{ii});
                 bb{ii} = swap(bb{ii});
